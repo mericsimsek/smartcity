@@ -16,7 +16,7 @@ from PIL import Image
 import logging
 
 
-# Configure logging
+# Configure loggingP
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -195,6 +195,144 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
+# ========================= PROPERTY LISTING API =========================
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import json
+from datetime import datetime
+import logging
+from typing import Dict, List, Optional, Tuple
+import os
+from contextlib import contextmanager
+import random
+import numpy as np
+import psycopg2
+
+
+
+
+
+@app.route('/api/properties', methods=['GET'])
+def get_properties():
+    """Veritabanındaki emlak ilanlarını getir"""
+    try:
+        conn = psycopg2.connect(
+    dbname="smartcity",
+    user="postgres",
+    password="123asd",
+    host="localhost",
+    port="5432"
+)
+        cur = conn.cursor()
+        
+        # Sorgu parametrelerini al (filtreleme için)
+        limit = request.args.get('limit', default=40, type=int)
+        offset = request.args.get('offset', default=0, type=int)
+        city = request.args.get('city', type=str)
+        min_price = request.args.get('min_price', type=float)
+        max_price = request.args.get('max_price', type=float)
+        
+        # Temel SQL sorgusu
+        sql = """
+            SELECT 
+                id,
+                city,
+                neighborhood,
+                building_age,
+                totalrooms,
+                bathroom_count,
+                luxury_score,
+                furnished,
+                air_conditioning,
+                has_balcony,
+                price_per_m2,
+                room_density,
+                location_tier,
+                m2_location_interact,
+                price_per_m2 * 120 as estimated_price  # 120m² üzerinden tahmini fiyat
+            FROM property_data
+        """
+        
+        # Filtreleme koşulları
+        conditions = []
+        params = []
+        
+        if city:
+            conditions.append("city = %s")
+            params.append(city)
+            
+        if min_price:
+            conditions.append("price_per_m2 >= %s")
+            params.append(min_price / 120)  # m² fiyatına çevir
+            
+        if max_price:
+            conditions.append("price_per_m2 <= %s")
+            params.append(max_price / 120)  # m² fiyatına çevir
+            
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+            
+        # Sıralama ve sayfalama
+        sql += " ORDER BY id DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+        
+        # Sorguyu çalıştır
+        cur.execute(sql, params)
+        columns = [desc[0] for desc in cur.description]
+        properties = [dict(zip(columns, row)) for row in cur.fetchall()]
+        
+        # Frontend için formatla
+        formatted_properties = []
+        for prop in properties:
+            features = []
+            if prop['furnished']: features.append("Mobilyalı")
+            if prop['air_conditioning']: features.append("Klima")
+            if prop['has_balcony']: features.append("Balkon")
+            
+            formatted_properties.append({
+                'id': prop['id'],
+                'title': f"{prop['totalrooms']}+{prop['bathroom_count']-1} Daire",
+                'location': f"{prop['neighborhood']}, {prop['city']}",
+                'price': int(prop['estimated_price']),
+                'm2': 120,  # Varsayılan değer veya gerçek m² bilgisi
+                'rooms': f"{prop['totalrooms']}+{prop['bathroom_count']-1}",
+                'features': features,
+                'image': "https://via.placeholder.com/400x250",  # Gerçek resim URL'si
+                'score': float(prop['luxury_score']),
+                'details': {
+                    'building_age': prop['building_age'],
+                    'price_per_m2': prop['price_per_m2'],
+                    'location_tier': prop['location_tier']
+                }
+            })
+        
+        # Toplam kayıt sayısını al (sayfalama için)
+        count_sql = "SELECT COUNT(*) FROM property_data"
+        if conditions:
+            count_sql += " WHERE " + " AND ".join(conditions)
+            
+        cur.execute(count_sql, params[:-2])  # LIMIT ve OFFSET hariç
+        total_count = cur.fetchone()[0]
+        
+        return jsonify({
+            'success': True,
+            'properties': formatted_properties,
+            'total_count': total_count,
+            'limit': limit,
+            'offset': offset
+        })
+        
+    except Exception as e:
+        logger.error(f"Property listeleme hatası: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+        
+    finally:
+        cur.close()
+        conn.close()
+
 # ========================= WEB ROUTES =========================
 
 @app.route('/')
@@ -365,12 +503,33 @@ def predict_price_without_xgboost(features):
 @app.route('/api/predict-price', methods=['POST'])
 def predict_price():
     try:
-        data = request.json
+        data = request.json or {}
+        required_fields = {
+            'm2_location_interact': 0,
+            'price_per_m2': 10000,
+            'room_density': 0,
+            'location_tier': 1,
+            'sqrt_m2': 100,
+            'totalrooms': 1,
+            'bathroom_count': 1,
+            'luxury_score': 1,
+            'Furnished': False,
+            'Air_conditioning': False,
+            'has_balcony': False
+        }
+        for key, default in required_fields.items():
+            if key not in data:
+                data[key] = default
+
+        # Boolean düzeltmesi (int desteği eklendi)
+        for key in ['Furnished', 'Air_conditioning', 'has_balcony']:
+            if isinstance(data[key], str):
+                data[key] = data[key].lower() in ['true', '1', 'evet', 'yes']
+            elif isinstance(data[key], int):
+                data[key] = bool(data[key])
+
         
-        # Tahmin yap
         predicted_price = predict_price_without_xgboost(data)
-        
-        # Mock feature importance (görselleştirme için)
         feature_importance = [
             data.get('m2_location_interact', 0) * 0.1,
             data.get('price_per_m2', 0) * 0.001,
@@ -379,15 +538,12 @@ def predict_price():
             data.get('sqrt_m2', 0) * 0.05,
             data.get('totalrooms', 0) * 1
         ]
-        
-        # Comparison data
         avg_price_per_m2 = data.get('price_per_m2', 10000)
         comparison_data = [
             predicted_price / data.get('sqrt_m2', 100),
             avg_price_per_m2 * 0.9,
             avg_price_per_m2 * 1.1
         ]
-        
         return jsonify({
             'status': 'success',
             'predicted_price': int(predicted_price),
@@ -395,7 +551,6 @@ def predict_price():
             'comparison_data': comparison_data,
             'timestamp': datetime.now().isoformat()
         })
-        
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 

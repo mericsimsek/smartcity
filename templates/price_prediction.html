@@ -577,31 +577,23 @@
                     has_balcony: $('#has_balcony').is(':checked') ? 1 : 0
                 };
                 
-                // Simulate API call (replace with actual AJAX call)
-                setTimeout(function() {
-                    // Mock response
-                    const mockResponse = {
-                        status: 'success',
-                        predicted_price: Math.round(formData.price_per_m2 * formData.sqrt_m2 * (0.9 + Math.random() * 0.2)),
-                        feature_importance: [
-                            Math.random() * 10,
-                            Math.random() * 8,
-                            Math.random() * 6,
-                            Math.random() * 4,
-                            Math.random() * 3,
-                            Math.random() * 2
-                        ],
-                        comparison_data: [
-                            formData.price_per_m2,
-                            formData.price_per_m2 * (0.8 + Math.random() * 0.4),
-                            formData.price_per_m2 * (0.9 + Math.random() * 0.2)
-                        ],
-                        timestamp: new Date().toISOString()
-                    };
-                    
-                    displayResults(mockResponse);
-                    $('#loadingOverlay').hide();
-                }, 1500);
+                
+                // ...existing code...
+                $.ajax({
+                url: '/api/predict-price',
+    type: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify(formData),
+    success: function(response) {
+        displayResults(response);
+        $('#loadingOverlay').hide();
+    },
+                error: function(xhr) {
+        alert('Hata: ' + (xhr.responseJSON?.error || 'Tahmin yapılamadı'));
+        $('#loadingOverlay').hide();
+    }
+});
+// ...existing code...
                 
                 // Actual AJAX call would look like this:
                 /*

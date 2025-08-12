@@ -104,6 +104,51 @@
             50% { transform: translateY(-20px); }
         }
 
+        .properties-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px;
+}
+
+        .property-card {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: transform 0.3s;
+}
+
+        .property-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+        .feature-tag {
+    background: #f0f0f0;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-right: 5px;
+    font-size: 0.8em;
+}
+
+        .load-more-btn {
+    padding: 10px 20px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 20px auto;
+    display: block;
+}
+
+/* Modal stilleri */
+        .modal {
+    display: none;
+    position: fixed;
+    /* ... diğer modal stilleri ... */
+}
+
         /* Features Section */
         .features-section {
             background: rgba(255, 255, 255, 0.95);
@@ -759,60 +804,125 @@
     </script>
     <script>
 // Ana sayfa için ilan yükleme fonksiyonu
-function loadFeaturedProperties() {
-    // Mock ilan verisi - gerçek API'den gelecek
+async function loadFeaturedProperties() {
+    try {
+        // API'den öne çıkan ilanları çek
+        const response = await fetch('http://localhost:5000/api/properties?limit=12');
+        const data = await response.json();
+        
+        if (data.success) {
+            // API'den gelen gerçek verileri göster
+            displayProperties(data.properties);
+            
+            // Sayfalama bilgilerini konsola yazdır (isteğe bağlı)
+            console.log(`Toplam ${data.total_count} ilan bulundu, gösterilen: ${data.properties.length}`);
+        } else {
+            console.error('API Hatası:', data.error);
+            // Fallback olarak mock data göster
+            loadMockProperties();
+        }
+    } catch (error) {
+        console.error('Fetch Hatası:', error);
+        // Fallback olarak mock data göster
+        loadMockProperties();
+    }
+}
+
+function displayProperties(properties) {
+    const container = document.getElementById('properties-container');
+    container.innerHTML = '';
+    
+    properties.forEach(prop => {
+        const card = `
+        <div class="property-card" data-id="${prop.id}">
+            <img src="${prop.image}" alt="${prop.title}" onerror="this.src='https://via.placeholder.com/400x250'">
+            <div class="property-info">
+                <h3>${prop.title}</h3>
+                <p class="location">${prop.location}</p>
+                <div class="features">
+                    ${prop.features.map(f => `<span class="feature-tag">${f}</span>`).join('')}
+                </div>
+                <div class="details">
+                    <span><i class="fas fa-ruler-combined"></i> ${prop.m2}m²</span>
+                    <span><i class="fas fa-door-open"></i> ${prop.rooms}</span>
+                    <span><i class="fas fa-tag"></i> ${prop.price.toLocaleString('tr-TR')} TL</span>
+                </div>
+                <div class="rating">
+                    <i class="fas fa-star"></i> ${prop.score.toFixed(1)}
+                </div>
+                <button class="details-btn" onclick="showPropertyDetails(${prop.id})">
+                    Detayları Göster
+                </button>
+            </div>
+        </div>`;
+        container.insertAdjacentHTML('beforeend', card);
+    });
+}
+
+// Mock data fallback fonksiyonu
+function loadMockProperties() {
+    console.warn("API'ye ulaşılamadı, mock veriler gösteriliyor");
     const mockProperties = [
         {
-            id: 1,
-            title: "3+1 Merkezi Daire",
-            location: "Kadıköy, İstanbul", 
-            price: 2500000,
+            id: 999,
+            title: "3+1 Örnek Daire",
+            location: "API Bağlantı Hatası", 
+            price: 1500000,
             m2: 120,
             rooms: "3+1",
-            features: ["Mobilyalı", "Klima", "Balkon"],
+            features: ["Mobilyalı", "Klima"],
             image: "https://via.placeholder.com/400x250",
-            score: 8.5
+            score: 7.5
         },
-        {
-            id: 2,
-            title: "2+1 Modern Daire",
-            location: "Beşiktaş, İstanbul",
-            price: 1800000,
-            m2: 95,
-            rooms: "2+1", 
-            features: ["Klima", "Balkon"],
-            image: "https://via.placeholder.com/400x250",
-            score: 7.8
-        },
-        {
-            id: 3,
-            title: "4+1 Lüks Villa",
-            location: "Sarıyer, İstanbul",
-            price: 8500000,
-            m2: 250,
-            rooms: "4+1",
-            features: ["Mobilyalı", "Klima", "Balkon", "Bahçe"],
-            image: "https://via.placeholder.com/400x250", 
-            score: 9.2
-        }
-        // Daha fazla ilan ekleyebilirsiniz
+        // Diğer mock veriler...
     ];
-    
-    // Toplam 40 ilan için mock data generat et
-    const allProperties = [];
-    for(let i = 0; i < 40; i++) {
-        const base = mockProperties[i % 3];
-        allProperties.push({
-            ...base,
-            id: i + 1,
-            title: base.title + ` - ${i + 1}`,
-            price: base.price + (Math.random() * 500000 - 250000),
-            m2: base.m2 + (Math.random() * 50 - 25),
-            score: (base.score + (Math.random() * 2 - 1)).toFixed(1)
-        });
+    displayProperties(mockProperties.slice(0, 3));
+}
+
+// Detay gösterim fonksiyonu
+async function showPropertyDetails(propertyId) {
+    try {
+        const response = await fetch(`http://localhost:5000/api/properties/${propertyId}`);
+        const property = await response.json();
+        
+        // Modal veya detay sayfasını aç
+        openPropertyModal(property);
+    } catch (error) {
+        console.error('Detay getirme hatası:', error);
+        alert('İlan detayları getirilemedi');
     }
+}
+
+// Sayfa yüklendiğinde verileri çek
+document.addEventListener('DOMContentLoaded', () => {
+    loadFeaturedProperties();
     
-    displayProperties(allProperties.slice(0, 12)); // İlk 12 tanesini göster
+    // Eğer bir "Daha Fazla Yükle" butonunuz varsa
+    const loadMoreBtn = document.getElementById('load-more');
+    if (loadMoreBtn) {
+        loadMoreBtn.addEventListener('click', loadMoreProperties);
+    }
+});
+
+// Daha fazla ilan yükleme fonksiyonu
+let currentOffset = 12;
+async function loadMoreProperties() {
+    try {
+        const response = await fetch(`http://localhost:5000/api/properties?limit=12&offset=${currentOffset}`);
+        const data = await response.json();
+        
+        if (data.success && data.properties.length > 0) {
+            displayProperties(data.properties);
+            currentOffset += data.properties.length;
+            
+            // Eğer daha fazla ilan kalmadıysa butonu gizle
+            if (currentOffset >= data.total_count) {
+                document.getElementById('load-more').style.display = 'none';
+            }
+        }
+    } catch (error) {
+        console.error('Daha fazla ilan yükleme hatası:', error);
+    }
 }
 
 function displayProperties(properties) {
