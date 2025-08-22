@@ -1,1 +1,10 @@
 venv/
+.env
+*.pyc
+__pycache__/
+.DS_Store
+*.log
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+venv/
